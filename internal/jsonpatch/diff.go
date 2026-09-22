@@ -1,17 +1,23 @@
 package jsonpatch
 
 import (
-	"encoding/json/jsontext"
+	"bytes"
+	jsonv1 "encoding/json"
 	"encoding/json/v2"
 	jsonutil "github.com/firestartorg/rfc6902-go/internal/jsonutil"
 	"slices"
 	"strconv"
 )
 
-// unmarshal decodes JSON allowing duplicate object member names, matching
-// JavaScript's JSON.parse (where the last name wins), unlike v2's strict default.
+// unmarshal decodes JSON into out, preserving numeric precision by decoding
+// numbers as json.Number. This matches the byte-level fidelity of the reference
+// implementation's JSON parsers and avoids corrupting integers beyond 2^53.
+// The v1 decoder also allows duplicate object member names (last name wins),
+// matching JavaScript's JSON.parse.
 func unmarshal(data []byte, out any) error {
-	return json.Unmarshal(data, out, jsontext.AllowDuplicateNames(true))
+	decoder := jsonv1.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	return decoder.Decode(out)
 }
 
 // All diff* functions return a list of operations, often empty.

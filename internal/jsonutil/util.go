@@ -3,7 +3,11 @@
 // rfc6902 package instead.
 package jsonutil
 
-import "reflect"
+import (
+	jsonv1 "encoding/json"
+	"math/big"
+	"reflect"
+)
 
 // undefinedType models JavaScript's `undefined`, which has no JSON
 // representation. It exists solely to preserve the reference implementation's
@@ -46,10 +50,13 @@ func ObjectType(object any) string {
 	return "object"
 }
 
-// isNumber reports whether v is any Go numeric type.
+// isNumber reports whether v is any Go numeric type, including json.Number.
 func isNumber(v any) bool {
 	if v == nil {
 		return false
+	}
+	if _, ok := v.(jsonv1.Number); ok {
+		return true
 	}
 	switch reflect.TypeOf(v).Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
@@ -88,8 +95,22 @@ func numberValue(v any) float64 {
 		return float64(n)
 	case float64:
 		return n
+	case jsonv1.Number:
+		f, _ := n.Float64()
+		return f
 	}
 	return 0
+}
+
+// jsonNumbersEqual compares two json.Number values exactly, using big.Rat so
+// that integers beyond float64's 2^53 precision are not conflated.
+func jsonNumbersEqual(a, b jsonv1.Number) bool {
+	aRat, aOK := new(big.Rat).SetString(string(a))
+	bRat, bOK := new(big.Rat).SetString(string(b))
+	if aOK && bOK {
+		return aRat.Cmp(bRat) == 0
+	}
+	return string(a) == string(b)
 }
 
 // ScalarEqual mirrors JavaScript's `===` for the values that reach it: it
@@ -102,6 +123,11 @@ func ScalarEqual(a, b any) bool {
 	}
 	if a == nil || b == nil {
 		return a == nil && b == nil
+	}
+	if aNumber, ok := a.(jsonv1.Number); ok {
+		if bNumber, ok := b.(jsonv1.Number); ok {
+			return jsonNumbersEqual(aNumber, bNumber)
+		}
 	}
 	if isNumber(a) && isNumber(b) {
 		return numberValue(a) == numberValue(b)
